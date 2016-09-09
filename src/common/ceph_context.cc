@@ -445,6 +445,23 @@ void CephContext::do_command(std::string command, cmdmap_t& cmdmap,
 		         << "result is " << out->length() << " bytes" << dendl;
 }
 
+static void dump_potential_leaked_string(CephContext *cct,
+                                         const md_config_t *conf,
+                                         const config_option& opt)
+{
+  if (opt.type != OPT_STR) {
+    return;
+  }
+  auto str = static_cast<const std::string*>(opt.conf_ptr(conf));
+#if 0
+  static const std::set<size_t> LEAKED_BYTE_SIZES{28, 51, 61, 63};
+  if (!LEAKED_BYTE_SIZES.count(str->capacity())) {
+    return;
+  }
+#endif
+  lgeneric_dout(cct, 0) << "config string [" << str->capacity()
+      << "] '" << opt.name << "' '" << *str << "'" << dendl;
+}
 
 CephContext::CephContext(uint32_t module_type_, int init_flags_)
   : nref(1),
@@ -478,6 +495,11 @@ CephContext::CephContext(uint32_t module_type_, int init_flags_)
 
   _log = new ceph::log::Log(&_conf->subsys);
   _log->start();
+
+  // XXX: trying to track down rgw memory leaks from config strings
+  _conf->for_each_option([=] (const config_option& opt) {
+                           dump_potential_leaked_string(this, _conf, opt);
+                         });
 
   _log_obs = new LogObs(_log);
   _conf->add_observer(_log_obs);
