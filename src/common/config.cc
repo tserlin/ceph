@@ -161,6 +161,12 @@ md_config_t::~md_config_t()
 {
 }
 
+void md_config_t::for_each_option(std::function<void(const config_option&)> f) const
+{
+  std::for_each(std::begin(config_optionsp),
+                std::end(config_optionsp), f);
+}
+
 void md_config_t::add_observer(md_config_obs_t* observer_)
 {
   Mutex::Locker l(lock);

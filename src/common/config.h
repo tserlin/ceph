@@ -85,6 +85,8 @@ public:
   md_config_t();
   ~md_config_t();
 
+  void for_each_option(std::function<void(const struct config_option&)> f) const;
+
   // Adds a new observer to this configuration. You can do this at any time,
   // but it will only receive notifications for the changes that happen after
   // you attach it, obviously.
