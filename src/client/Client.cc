@@ -11605,6 +11605,9 @@ int Client::ll_create(Inode *parent, const char *name, mode_t mode,
 		      int flags, struct stat *attr, Inode **outp, Fh **fhp,
 		      int uid, int gid)
 {
+  if (fhp)
+    *fhp = NULL;
+
   Mutex::Locker lock(client_lock);
 
   vinodeno_t vparent = _get_vino(parent);
