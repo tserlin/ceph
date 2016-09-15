@@ -49,7 +49,7 @@ function TEST_scrub_snaps() {
     poolid=$(ceph osd dump | grep "^pool.*[']test[']" | awk '{ print $2 }')
 
     dd if=/dev/urandom of=$TESTDATA bs=1032 count=1
-    for i in `seq 1 14`
+    for i in `seq 1 15`
     do
         rados -p $poolname put obj${i} $TESTDATA
     done
@@ -147,11 +147,16 @@ function TEST_scrub_snaps() {
     JSON="$(ceph-objectstore-tool --data-path $dir/0 --journal-path $dir/0/journal --head --op list obj14)"
     ceph-objectstore-tool --data-path $dir/0 --journal-path $dir/0/journal "$JSON" clear-snapset size
 
+    echo "garbage" > $dir/bad
+    JSON="$(ceph-objectstore-tool --data-path $dir/0 --journal-path $dir/0/journal --head --op list obj15)"
+    ceph-objectstore-tool --data-path $dir/0 --journal-path $dir/0/journal "$JSON" set-attr snapset $dir/bad
+    rm -f $dir/bad
+
     run_osd $dir 0 || return 1
     wait_for_clean || return 1
 
     local pgid="${poolid}.0"
-    if ! pg_scrub "$pgid" ; then
+    if ! pg_deep_scrub "$pgid" ; then
         cat $dir/osd.0.log
         return 1
     fi
@@ -164,7 +169,7 @@ function TEST_scrub_snaps() {
     test $(jq -r '.[0]' $dir/json) = $pgid || return 1
 
     rados list-inconsistent-snapset $pgid > $dir/json || return 1
-    test $(jq '.inconsistents | length' $dir/json) = "20" || return 1
+    test $(jq '.inconsistents | length' $dir/json) = "21" || return 1
 
     local jqfilter='.inconsistents'
     local sortkeys='import json; import sys ; JSON=sys.stdin.read() ; ud = json.loads(JSON) ; print json.dumps(ud, sort_keys=True, indent=2)'
@@ -295,6 +300,15 @@ function TEST_scrub_snaps() {
     },
     {
       "errors": [
+        "ss_attr_corrupted"
+      ],
+      "snap": "head",
+      "locator": "",
+      "nspace": "",
+      "name": "obj15"
+    },
+    {
+      "errors": [
         "size_mismatch"
       ],
       "snap": "head",
@@ -406,29 +420,30 @@ EOF
     kill_daemons $dir || return 1
 
     declare -a err_strings
-    err_strings[0]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*::obj10:.* is missing in clone_overlap"
-    err_strings[1]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*::obj5:7 no '_' attr"
-    err_strings[2]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*::obj5:7 is an unexpected clone"
-    err_strings[3]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*::obj5:4 on disk size [(]4608[)] does not match object info size [(]512[)] adjusted for ondisk to [(]512[)]"
-    err_strings[4]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj5:head expected clone .*:::obj5:2"
-    err_strings[5]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj5:head expected clone .*:::obj5:1"
-    err_strings[6]="log_channel[(]cluster[)] log [[]INF[]] : scrub [0-9]*[.]0 .*:::obj5:head 2 missing clone[(]s[)]"
-    err_strings[7]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj12:head snapset.head_exists=false, but head exists"
-    err_strings[8]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj8:head snaps.seq not set"
-    err_strings[9]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj7:head snapset.head_exists=false, but head exists"
-    err_strings[10]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj7:1 is an unexpected clone"
-    err_strings[11]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj3:head on disk size [(]3840[)] does not match object info size [(]768[)] adjusted for ondisk to [(]768[)]"
-    err_strings[12]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj6:1 is an unexpected clone"
-    err_strings[13]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj2:snapdir no 'snapset' attr"
-    err_strings[14]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj2:7 clone ignored due to missing snapset"
-    err_strings[15]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj2:4 clone ignored due to missing snapset"
-    err_strings[16]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj4:snapdir expected clone .*:::obj4:7"
-    err_strings[17]="log_channel[(]cluster[)] log [[]INF[]] : scrub [0-9]*[.]0 .*:::obj4:snapdir 1 missing clone[(]s[)]"
-    err_strings[18]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj1:1 is an unexpected clone"
-    err_strings[19]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj9:1 is missing in clone_size"
-    err_strings[20]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj11:1 is an unexpected clone"
-    err_strings[21]="log_channel[(]cluster[)] log [[]ERR[]] : scrub [0-9]*[.]0 .*:::obj14:1 size 1032 != clone_size 1033"
-    err_strings[22]="log_channel[(]cluster[)] log [[]ERR[]] : [0-9]*[.]0 scrub 21 errors"
+    err_strings[0]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*::obj10:.* is missing in clone_overlap"
+    err_strings[1]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*::obj5:7 no '_' attr"
+    err_strings[2]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*::obj5:7 is an unexpected clone"
+    err_strings[3]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*::obj5:4 on disk size [(]4608[)] does not match object info size [(]512[)] adjusted for ondisk to [(]512[)]"
+    err_strings[4]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj5:head expected clone .*:::obj5:2"
+    err_strings[5]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj5:head expected clone .*:::obj5:1"
+    err_strings[6]="log_channel[(]cluster[)] log [[]INF[]] : deep-scrub [0-9]*[.]0 .*:::obj5:head 2 missing clone[(]s[)]"
+    err_strings[7]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj12:head snapset.head_exists=false, but head exists"
+    err_strings[8]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj8:head snaps.seq not set"
+    err_strings[9]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj7:head snapset.head_exists=false, but head exists"
+    err_strings[10]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj7:1 is an unexpected clone"
+    err_strings[11]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj3:head on disk size [(]3840[)] does not match object info size [(]768[)] adjusted for ondisk to [(]768[)]"
+    err_strings[12]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj6:1 is an unexpected clone"
+    err_strings[13]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj2:snapdir no 'snapset' attr"
+    err_strings[14]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj2:7 clone ignored due to missing snapset"
+    err_strings[15]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj2:4 clone ignored due to missing snapset"
+    err_strings[16]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj4:snapdir expected clone .*:::obj4:7"
+    err_strings[17]="log_channel[(]cluster[)] log [[]INF[]] : deep-scrub [0-9]*[.]0 .*:::obj4:snapdir 1 missing clone[(]s[)]"
+    err_strings[18]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj1:1 is an unexpected clone"
+    err_strings[19]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj9:1 is missing in clone_size"
+    err_strings[20]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj11:1 is an unexpected clone"
+    err_strings[21]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj14:1 size 1032 != clone_size 1033"
+    err_strings[22]="log_channel[(]cluster[)] log [[]ERR[]] : [0-9]*[.]0 deep-scrub 22 errors"
+    err_strings[23]="log_channel[(]cluster[)] log [[]ERR[]] : deep-scrub [0-9]*[.]0 .*:::obj15:head can't decode 'snapset' attr buffer"
 
     for i in `seq 0 ${#err_strings[@]}`
     do
@@ -438,6 +453,8 @@ EOF
             ERRORS=$(expr $ERRORS + 1)
         fi
     done
+
+    cat $dir/osd.0.log
 
     teardown $dir || return 1
 

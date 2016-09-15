@@ -1148,7 +1148,6 @@ public:
     int shallow_errors;
     int deep_errors;
     int fixed;
-    ScrubMap primary_scrubmap;
     map<pg_shard_t, ScrubMap> received_maps;
     OpRequestRef active_rep_scrub;
     utime_t scrub_reg_stamp;  // stamp we registered for
@@ -1177,10 +1176,7 @@ public:
     enum State {
       INACTIVE,
       NEW_CHUNK,
-      WAIT_PUSHES,
-      WAIT_LAST_UPDATE,
-      BUILD_MAP,
-      WAIT_REPLICAS,
+      WAIT_MAPS,
       COMPARE_MAPS,
       WAIT_DIGEST_UPDATES,
       FINISH,
@@ -1211,10 +1207,7 @@ public:
       {
         case INACTIVE: ret = "INACTIVE"; break;
         case NEW_CHUNK: ret = "NEW_CHUNK"; break;
-        case WAIT_PUSHES: ret = "WAIT_PUSHES"; break;
-        case WAIT_LAST_UPDATE: ret = "WAIT_LAST_UPDATE"; break;
-        case BUILD_MAP: ret = "BUILD_MAP"; break;
-        case WAIT_REPLICAS: ret = "WAIT_REPLICAS"; break;
+        case WAIT_MAPS: ret = "WAIT_MAPS"; break;
         case COMPARE_MAPS: ret = "COMPARE_MAPS"; break;
         case WAIT_DIGEST_UPDATES: ret = "WAIT_DIGEST_UPDATES"; break;
         case FINISH: ret = "FINISH"; break;
@@ -1305,7 +1298,7 @@ public:
    */
   virtual bool _range_available_for_scrub(
     const hobject_t &begin, const hobject_t &end) = 0;
-  virtual void _scrub(
+  virtual void scrub_snapshot_metadata(
     ScrubMap &map,
     const std::map<hobject_t, pair<uint32_t, uint32_t>, hobject_t::BitwiseComparator> &missing_digest) { }
   virtual void _scrub_clear_state() { }
