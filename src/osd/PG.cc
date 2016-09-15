@@ -3765,6 +3765,9 @@ int PG::build_scrub_map_chunk(
     lock();
   }
 
+  // WARNING: Interval may have changed for a deep scrub because pg lock was
+  // released.
+
   dout(20) << __func__ << " done" << dendl;
   return 0;
 }
@@ -3866,6 +3869,9 @@ void PG::replica_scrub(
   build_scrub_map_chunk(
     map, start, end, msg->deep, msg->seed,
     handle);
+
+  // WARNING: Interval may have changed for a deep-scrub because pg lock was
+  // released by build_scrub_map_chunk().
 
   vector<OSDOp> scrub(1);
   scrub[0].op.op = CEPH_OSD_OP_SCRUB_MAP;
