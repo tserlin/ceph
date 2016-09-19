@@ -1469,6 +1469,12 @@ TEST(LibCephFS, SlashDotDot) {
   ceph_shutdown(cmount);
 }
 
+static inline bool
+timespec_eq(timespec const& lhs, timespec const& rhs)
+{
+  return lhs.tv_sec == rhs.tv_sec && lhs.tv_nsec == rhs.tv_nsec;
+}
+
 TEST(LibCephFS, Btime) {
   struct ceph_mount_info *cmount;
   ASSERT_EQ(ceph_create(&cmount, NULL), 0);
@@ -1488,13 +1494,11 @@ TEST(LibCephFS, Btime) {
 
   ASSERT_EQ(ceph_fstatx(cmount, fd, &stx, CEPH_STATX_CTIME|CEPH_STATX_BTIME, 0), 0);
   ASSERT_TRUE(stx.stx_mask & (CEPH_STATX_CTIME|CEPH_STATX_BTIME));
-  ASSERT_TRUE(stx.stx_ctime.tv_sec == stx.stx_btime.tv_sec &&
-	      stx.stx_ctime.tv_nsec == stx.stx_btime.tv_nsec);
+  ASSERT_TRUE(timespec_eq(stx.stx_ctime, stx.stx_btime));
   ceph_close(cmount, fd);
 
   ASSERT_EQ(ceph_statx(cmount, filename, &stx, CEPH_STATX_CTIME|CEPH_STATX_BTIME, 0), 0);
-  ASSERT_TRUE(stx.stx_ctime.tv_sec == stx.stx_btime.tv_sec &&
-	      stx.stx_ctime.tv_nsec == stx.stx_btime.tv_nsec);
+  ASSERT_TRUE(timespec_eq(stx.stx_ctime, stx.stx_btime));
   ASSERT_TRUE(stx.stx_mask & (CEPH_STATX_CTIME|CEPH_STATX_BTIME));
 
   struct timespec old_btime = stx.stx_btime;
@@ -1502,12 +1506,10 @@ TEST(LibCephFS, Btime) {
   /* Now sleep, do a chmod and verify that the ctime changed, but btime didn't */
   sleep(1);
   ASSERT_EQ(ceph_chmod(cmount, filename, 0644), 0);
-  ASSERT_EQ(ceph_statx(cmount, filename, &stx, CEPH_STATX_BTIME, 0), 0);
+  ASSERT_EQ(ceph_statx(cmount, filename, &stx, CEPH_STATX_CTIME|CEPH_STATX_BTIME, 0), 0);
   ASSERT_TRUE(stx.stx_mask & CEPH_STATX_BTIME);
-  ASSERT_TRUE(stx.stx_btime.tv_sec == old_btime.tv_sec &&
-	      stx.stx_btime.tv_nsec == old_btime.tv_nsec);
-  ASSERT_FALSE(stx.stx_ctime.tv_sec == stx.stx_btime.tv_sec &&
-	       stx.stx_ctime.tv_nsec == stx.stx_btime.tv_nsec);
+  ASSERT_TRUE(timespec_eq(stx.stx_btime, old_btime));
+  ASSERT_FALSE(timespec_eq(stx.stx_ctime, stx.stx_btime));
 
   ceph_shutdown(cmount);
 }
@@ -1536,9 +1538,7 @@ TEST(LibCephFS, SetBtime) {
 
   ASSERT_EQ(ceph_statx(cmount, filename, &stx, CEPH_STATX_BTIME, 0), 0);
   ASSERT_TRUE(stx.stx_mask & CEPH_STATX_BTIME);
-
-  ASSERT_TRUE(stx.stx_btime.tv_sec == old_btime.tv_sec &&
-	      stx.stx_btime.tv_nsec == old_btime.tv_nsec);
+  ASSERT_TRUE(timespec_eq(stx.stx_btime, old_btime));
 
   ceph_shutdown(cmount);
 }
