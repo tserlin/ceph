@@ -11597,8 +11597,7 @@ int Client::ll_create(Inode *parent, const char *name, mode_t mode,
 		      int flags, struct stat *attr, Inode **outp, Fh **fhp,
 		      int uid, int gid)
 {
-  if (fhp)
-    *fhp = NULL;
+  *fhp = NULL;
 
   Mutex::Locker lock(client_lock);
 
@@ -11625,8 +11624,8 @@ int Client::ll_create(Inode *parent, const char *name, mode_t mode,
       if (r < 0)
 	goto out;
     }
-    r = _create(parent, name, flags, mode, &in, fhp /* may be NULL */,
-	        0, 0, 0, NULL, &created, uid, gid);
+    r = _create(parent, name, flags, mode, &in, fhp, 0, 0, 0, NULL, &created,
+		uid, gid);
     if (r < 0)
       goto out;
   }
@@ -11642,14 +11641,14 @@ int Client::ll_create(Inode *parent, const char *name, mode_t mode,
     if (!cct->_conf->fuse_default_permissions) {
       r = may_open(in.get(), flags, uid, gid);
       if (r < 0) {
-	if (fhp && *fhp) {
+	if (*fhp) {
 	  int release_r = _release_fh(*fhp);
 	  assert(release_r == 0);  // during create, no async data ops should have happened
 	}
 	goto out;
       }
     }
-    if (fhp && (*fhp == NULL)) {
+    if (*fhp == NULL) {
       r = _open(in.get(), flags, mode, fhp, uid, gid);
       if (r < 0)
 	goto out;
@@ -11660,14 +11659,13 @@ out:
   if (r < 0)
     attr->st_ino = 0;
 
-  Fh *fhptr = fhp ? *fhp : NULL;
-  if (fhptr) {
-    ll_unclosed_fh_set.insert(fhptr);
+  if (*fhp) {
+    ll_unclosed_fh_set.insert(*fhp);
   }
-  tout(cct) << (unsigned long)fhptr << std::endl;
+  tout(cct) << (unsigned long)*fhp << std::endl;
   tout(cct) << attr->st_ino << std::endl;
   ldout(cct, 3) << "ll_create " << parent << " " << name << " 0" << oct <<
-    mode << dec << " " << flags << " = " << r << " (" << fhptr << " " <<
+    mode << dec << " " << flags << " = " << r << " (" << *fhp << " " <<
     hex << attr->st_ino << dec << ")" << dendl;
 
   // passing an Inode in outp requires an additional ref
